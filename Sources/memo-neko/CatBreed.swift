@@ -33,14 +33,12 @@ enum CatBreed: Int, CaseIterable {
         }
     }
 
-    // メニューバー表示時の拡大率。三毛猫の旧画像はキャンバスに余白が多いため1.3倍で大きく見せる。
-    // 黒猫・茶トラ・ハチワレはキャンバスの95%まで描かれた新仕様の画像なので等倍でよい
-    // （拡大すると耳やヒゲが切れる）。三毛猫を将来同じ仕様の画像に差し替えたらこの分岐は不要になる。
+    // メニューバー表示時の拡大率。バンドル同梱の猫はキャンバスの95%まで描かれた仕様なので
+    // 軽く拡大（1.15倍）してメニューバーで大きく見せる。カスタムはどんな余白か分からないため等倍。
     var overscan: CGFloat {
         switch self {
-        case .calico: return 1.3
-        case .black, .tabby, .hachiware, .exotic: return 1.15
-        case .custom: return 1.0 // ユーザー画像はどんな余白か分からないので拡大しない
+        case .calico, .black, .tabby, .hachiware, .exotic: return 1.15
+        case .custom: return 1.0
         }
     }
 }

@@ -39,11 +39,11 @@ enum CatStage: Int, CaseIterable {
 
     var label: String {
         switch self {
-        case .slim: return "シュッ"
+        case .slim: return "元気"
         case .normal: return "普通"
-        case .chubby: return "ちょいぽちゃ"
-        case .plump: return "ぽっちゃり"
-        case .stuffed: return "パンパン"
+        case .chubby: return "ちょっと疲れ気味"
+        case .plump: return "しんどい"
+        case .stuffed: return "限界"
         }
     }
 
