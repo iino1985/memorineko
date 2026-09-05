@@ -2,15 +2,12 @@ import Cocoa
 
 // MARK: - 猫アイコン読み込み（表情ベースのカスタム画像があればそれを使い、無ければ液面メーター型にフォールバック）
 
-private let customImageFileNames: [CatStage: String] = [
-    .slim: "cat_slim",
-    .normal: "cat_normal",
-    .chubby: "cat_chubby",
-    .plump: "cat_plump",
-    .stuffed: "cat_stuffed",
-]
+private struct CacheKey: Hashable {
+    let breed: CatBreed
+    let stage: CatStage
+}
 
-private var customImageCache: [CatStage: NSImage] = [:]
+private var customImageCache: [CacheKey: NSImage] = [:]
 
 // 画像内の実際の絵柄（アルファが乗っている範囲）だけを検出する。
 // 元画像に余白があると、メニューバーでは実際より小さく見えてしまうため。
@@ -45,7 +42,7 @@ private func alphaBoundingBox(of cg: CGImage) -> CGRect {
 // PNGの余白をトリミングし、メニューバー用のポイントサイズ角（2xビットマップ）に確実に焼き直す。
 // NSImage.size の上書きだけだと表示側で元のピクセルサイズが優先されはみ出すことがあるため、
 // ここで明示的にビットマップとして再描画してからサイズを付与する。
-private func fitToMenuBarSize(pngURL: URL, pointSize: Int = 22, pixelScale: Int = 2) -> NSImage? {
+private func fitToMenuBarSize(pngURL: URL, overscan: CGFloat, pointSize: Int = 22, pixelScale: Int = 2) -> NSImage? {
     guard let data = try? Data(contentsOf: pngURL),
           let srcRep = NSBitmapImageRep(data: data),
           var srcCG = srcRep.cgImage else { return nil }
@@ -62,9 +59,11 @@ private func fitToMenuBarSize(pngURL: URL, pointSize: Int = 22, pixelScale: Int 
     ) else { return nil }
 
     ctx.interpolationQuality = .high
-    // トリミング後の絵柄をアスペクト比を保ったまま正方形いっぱいに配置する
+    // トリミング後の絵柄をアスペクト比を保ったまま正方形いっぱいに配置する。
+    // overscanは呼び出し元が猫種ごとに指定する（余白の少ない新画像には1.0を渡し、
+    // 余白が多い旧画像だけ拡大して大きく見せる）。
     let srcSize = CGSize(width: srcCG.width, height: srcCG.height)
-    let fitScale = min(CGFloat(pixels) / srcSize.width, CGFloat(pixels) / srcSize.height)
+    let fitScale = min(CGFloat(pixels) / srcSize.width, CGFloat(pixels) / srcSize.height) * overscan
     let drawWidth = srcSize.width * fitScale
     let drawHeight = srcSize.height * fitScale
     let drawRect = CGRect(
@@ -81,14 +80,43 @@ private func fitToMenuBarSize(pngURL: URL, pointSize: Int = 22, pixelScale: Int 
     return image
 }
 
-func loadCatImage(stage: CatStage, isDarkMenuBar: Bool) -> NSImage {
-    if let cached = customImageCache[stage] {
+// MARK: - カスタム画像（ユーザーがアップロードしたもの）の保存先
+// アプリバンドル内には書き込めないので、Application Support配下に保存する。
+
+func customImagesDirectory() throws -> URL {
+    let base = try FileManager.default.url(
+        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+    )
+    let dir = base.appendingPathComponent("MemoriNeko/CustomCat", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+}
+
+private func customImageURL(for stage: CatStage) -> URL? {
+    try? customImagesDirectory().appendingPathComponent("\(stage.fileSuffix).png")
+}
+
+// 新しいカスタム画像を保存した後に呼び、古いキャッシュを捨てて再読み込みさせる。
+func clearCustomImageCache() {
+    customImageCache = customImageCache.filter { $0.key.breed != .custom }
+}
+
+func loadCatImage(breed: CatBreed, stage: CatStage, isDarkMenuBar: Bool) -> NSImage {
+    let key = CacheKey(breed: breed, stage: stage)
+    if let cached = customImageCache[key] {
         return cached
     }
-    if let name = customImageFileNames[stage],
-       let url = Bundle.module.url(forResource: name, withExtension: "png"),
-       let fitted = fitToMenuBarSize(pngURL: url) {
-        customImageCache[stage] = fitted
+
+    let url: URL?
+    if breed == .custom {
+        url = customImageURL(for: stage)
+    } else {
+        url = Bundle.module.url(forResource: "\(breed.fileNamePrefix)_\(stage.fileSuffix)", withExtension: "png")
+    }
+
+    if let url, FileManager.default.fileExists(atPath: url.path),
+       let fitted = fitToMenuBarSize(pngURL: url, overscan: breed.overscan) {
+        customImageCache[key] = fitted
         return fitted
     }
     return catImage(stage: stage, isDarkMenuBar: isDarkMenuBar)
